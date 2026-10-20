@@ -1,8 +1,7 @@
 # Online Learning Platform — Concepts, Architecture & Working
 
 A reference document for the project: every concept used, how the system is
-architected, and how each feature actually works. Use it as the basis for a
-project report or viva preparation.
+architected, and how each feature actually works.
 
 | Item            | Choice                                        |
 |-----------------|-----------------------------------------------|
@@ -16,9 +15,9 @@ project report or viva preparation.
 
 ---
 
-## 1. Software architecture
+## Software architecture
 
-### 1.1 Layered (3-tier) architecture
+###  Layered (3-tier) architecture
 
 The application follows a classic layered architecture. Data only flows
 downward; results and errors flow upward. No layer is allowed to skip a layer.
@@ -50,7 +49,7 @@ downward; results and errors flow upward. No layer is allowed to skip a layer.
   test layer:        tests/test_flows.py exercises services on a temp DB
 ```
 
-### 1.2 Module responsibilities
+###  Module responsibilities
 
 | Module         | Layer          | Responsibility (only this)                                          |
 |----------------|----------------|---------------------------------------------------------------------|
@@ -64,7 +63,7 @@ downward; results and errors flow upward. No layer is allowed to skip a layer.
 | `security.py`  | utility        | Salted PBKDF2 password hashing and constant-time verification        |
 | `tests/…`      | verification   | End-to-end service tests on a throwaway database                     |
 
-### 1.3 Design rules that keep it clean
+###  Design rules that keep it clean
 
 - **Separation of concerns** – UI code contains zero SQL; service code contains
   zero `input()`; reports never mutate rows.
@@ -80,7 +79,7 @@ downward; results and errors flow upward. No layer is allowed to skip a layer.
 
 ---
 
-## 2. How a request flows (lifecycle)
+##  How a request flows (lifecycle)
 
 Generic pipeline for every user action:
 
@@ -96,7 +95,7 @@ user choice
   -> any ServiceError is caught once and displayed
 ```
 
-### 2.1 Worked example — authentication
+###  Worked example — authentication
 
 1. Login screen reads email and password (`ask`, `ask_password`).
 2. `services.authenticate` lowercases the email, then tries one indexed
@@ -107,7 +106,7 @@ user choice
    dispatches to the matching portal menu. Wrong email/password simply returns
    `None`.
 
-### 2.2 Worked example — enrolling in a course
+###  Worked example — enrolling in a course
 
 1. `services.enroll(student_id, course_id)`:
    - course must exist and have `status = 'Published'` (`_require`);
@@ -118,7 +117,7 @@ user choice
 2. The `UNIQUE (student_id, course_id)` constraint is the database-level
    backstop for the same rule.
 
-### 2.3 Worked example — quiz submission (auto-grading)
+###  Worked example — quiz submission (auto-grading)
 
 1. Guards: assessment must be a `quiz`, the student must be enrolled, no prior
    submission may exist (`UNIQUE (assessment_id, student_id)`), the quiz must
@@ -138,7 +137,7 @@ user choice
 5. The result dict (score, correct count) is displayed instantly, and the
    answers are reviewable later through `get_answer_review`.
 
-### 2.4 Worked example — assignment grading
+###  Worked example — assignment grading
 
 1. **Student:** `submit_assignment` enforces enrollment and ≥ 20 characters; a
    resubmission *updates* the pending row and resets feedback, but is blocked
@@ -148,7 +147,7 @@ user choice
    writes score + feedback + `graded_at`. Weighted averages then include the
    item automatically.
 
-### 2.5 Worked example — automatic course completion
+###  Worked example — automatic course completion
 
 `mark_lesson_complete` inserts into `lesson_progress` (guarded by the
 `UNIQUE (enrollment_id, lesson_id)`), then `_sync_course_completion(course_id)`
@@ -159,9 +158,9 @@ deleted, so adding new content to a finished course correctly reopens it.
 
 ---
 
-## 3. Database design
+## Database design
 
-### 3.1 ER diagram
+### ER diagram
 
 ```
 instructors 1───* courses 1───* modules 1───* lessons
@@ -180,7 +179,7 @@ instructors 1───* courses 1───* modules 1───* lessons
 admins  (independent authentication entity)
 ```
 
-### 3.2 Tables
+### Tables
 
 | Table                | Purpose                                                            |
 |----------------------|--------------------------------------------------------------------|
@@ -197,7 +196,7 @@ admins  (independent authentication entity)
 | `submissions`        | One attempt per (assessment, student), score, feedback, graded_at  |
 | `submission_answers` | Per-question answer audit trail                                    |
 
-### 3.3 Views (stored, read-only queries)
+### Views (stored, read-only queries)
 
 | View                    | Removes repeated SQL for…                                        |
 |-------------------------|------------------------------------------------------------------|
@@ -208,7 +207,7 @@ admins  (independent authentication entity)
 Services (`course_roster`, `course_gradebook`) and reports both read them, so
 the "progress numerator/denominator" logic exists in exactly one place.
 
-### 3.4 Indexes
+### Indexes
 
 Eight secondary indexes on the join/filter columns (`courses.instructor_id`,
 `modules.course_id`, `lessons.module_id`, `enrollments.course_id`,
@@ -216,7 +215,7 @@ Eight secondary indexes on the join/filter columns (`courses.instructor_id`,
 `submissions.assessment_id`, `submissions.student_id`) keep the dashboard and
 report queries from scanning full tables as data grows.
 
-### 3.5 Integrity enforced by the database itself
+### Integrity enforced by the database itself
 
 | Rule                                             | Mechanism                                |
 |--------------------------------------------------|------------------------------------------|
@@ -234,7 +233,7 @@ lexicographic comparisons — no special date type needed.
 
 ---
 
-## 4. DBMS concepts used
+##  DBMS concepts used
 
 1. **Relational model & 3NF** — every table stores one fact per row; repeating
    lists were broken into child tables.
@@ -275,135 +274,10 @@ lexicographic comparisons — no special date type needed.
 
 ---
 
-## 5. Python concepts used
 
-1. **Modules & layering** — one concern per file; an import graph that never
-   cycles (`seed → services → security/db`, `cli → services/reports`).
-2. **Custom exception** — `class ServiceError(Exception)` turns domain failures
-   into data the UI can display.
-3. **Guard-clause validation** — the `_require(condition, message)` helper
-   implements "precondition → raise" in one line.
-4. **Role dispatch** — `authenticate()` iterates role tables; `run()` switches
-   on the returned role.
-5. **`sqlite3.Row`** — attribute-style access (`row["title"]`) instead of tuple
-   indices.
-6. **Transactions** — explicit `commit()` at the end of each service function,
-   `conn.close()` in `finally`.
-7. ****`kwargs` whitelisting** — `update_course(course_id, **fields)` filters an
-   allow-listed key set before building the dynamic `UPDATE`; identifiers are
-   never taken from user input (safe dynamic SQL).
-8. **`executemany`**, **comprehensions**, **generator unpacking**
-   (`max(len(h), *(…))`), **zip** pairing options/letters, **f-strings**,
-   driven formatting (`%g`).
-9. **`hashlib.pbkdf2_hmac` + `secrets.token_hex` + `hmac.compare_digest`** —
-   KDF crypto with a random salt and timing-safe verification.
-10. **`pathlib`** — locating `schema.sql` relative to `__file__`, DB reset,
-    export folder creation.
-11. **`csv` writer with `utf-8-sig`** — BOM so Excel opens exports correctly.
-12. **`re`** — slugifying report names for filenames.
-13. **`datetime`** — timestamped export names, seed due dates.
-14. **`argparse`** — the `--reset` maintenance flag instead of an ad-hoc script.
-15. **`tempfile.TemporaryDirectory`** — throwaway test databases.
-16. **`unittest`** — class fixtures (`setUpClass`/`tearDownClass`),
-    `assertRaises`, positive + negative cases, idempotency test.
-17. **Monkeypatch-safe CLI** — every point of input flows through `input()`
-    helpers, which is why the smoke tests can script sessions.
 
----
 
-## 6. Security concepts
-
-| Concept                | Implementation                                                    |
-|------------------------|-------------------------------------------------------------------|
-| Salted password hashing| PBKDF2-HMAC-SHA256, 120 000 iterations, 16-byte random salt        |
-| Hash storage format    | `pbkdf2$<iterations>$<salt-hex>$<digest-hex>` — self-describing     |
-| Timing-safe compare    | `hmac.compare_digest` instead of `==`                              |
-| SQL injection defense  | Every query parameterized; dynamic SQL uses whitelisted names only |
-| Authorization          | Role decided by the account table (can't be forged by the client); instructor queries filter `instructor_id`; admin action only in the admin portal |
-| Least privilege in data| `ON DELETE RESTRICT` keeps accounts with live courses              |
-| Password minimums      | Registration enforces ≥ 6 characters (see `create_student`)        |
-| No secrets on disk     | Demo passwords exist only as hashes; no token/PII beyond emails    |
-
-Authentication (who you are) is separated from authorization (what your role
-may do); the CLI only decides *which menu* to show — the services still verify
-enrollment/ownership before any mutation.
-
----
-
-## 7. Business rules and where they live
-
-| Rule                                                        | Enforced in                  |
-|-------------------------------------------------------------|------------------------------|
-| Only `Published` courses can be enrolled                    | `services.enroll`            |
-| One active enrollment per student per course                | service check + `UNIQUE`     |
-| Only enrolled students may submit/attempt                   | `take_quiz`, `submit_assignment` |
-| One quiz attempt per student per quiz                       | service check + `UNIQUE`     |
-| Assignments resubmittable until graded only                 | `submit_assignment`          |
-| Quiz answers auto-graded by points                          | `take_quiz`                  |
-| Instructor scoring bounded by `0 … max_score`               | `grade_submission`           |
-| Enrollment completes automatically at 100% lessons          | `_sync_course_completion`    |
-| Adding/removing lessons re-evaluates completion             | `add_lesson`/`delete_lesson` |
-| Students must supply ≥ 6-char passwords, valid emails       | `create_student`/`create_instructor` |
-| Instructors only grade their own courses' submissions       | `list_pending_grading(instructor_id)` |
-
----
-
-## 8. Key algorithms
-
-**Progress percent**
-
-```python
-percent = 0 if total == 0 else round(done * 100 / total)
-```
-
-**Weighted course average** — SQL accumulates the sums, Python divides:
-
-```
-avg_course = Σ( score/max_score * 100 * weight ) / Σ( weight )
-```
-
-**Completion synchronization** (per course, after any lesson change)
-
-```
-for each Active/Completed enrollment:
-    done = COUNT(lesson_progress)
-    total= COUNT(lessons of course)
-    status = 'Completed' if done == total and total else 'Active'
-```
-
-**Auto-grading**
-
-```
-earned = Σ points(question) where selected == correct
-total  = Σ points(questions)
-score  = earned/total * max_score
-```
-
-**Report fusion (example: enrollment summary)** — one scan join with `CASE`
-aggregates yields enrollments, completions and revenue per course in a single
-`GROUP BY`.
-
----
-
-## 9. Testing architecture
-
-- Every run creates a fresh SQLite file inside `TemporaryDirectory`, then runs
-  the real `seed.seed()` — tests execute the *same* SQL the production CLI uses.
-- Positive flows: seed counts, three-role authentication, enrollment →
-  completion, perfect 100% quiz, grading → weighted average.
-- Negative flows: duplicate enrollment, duplicate quiz attempt, foreign
-  student submission, out-of-range grade all raise `ServiceError`.
-- `seed.seed` is asserted idempotent, so `main.py` can seed on any startup.
-
-Run:
-
-```powershell
-python -m unittest discover -s tests -v
-```
-
----
-
-## 10. Demo dataset snapshot (as seeded)
+##  Demo dataset snapshot (as seeded)
 
 | Object                 | Count | Notes                                        |
 |------------------------|-------|----------------------------------------------|
@@ -420,7 +294,7 @@ python -m unittest discover -s tests -v
 
 ---
 
-## 11. One-paragraph summary
+One-paragraph summary
 
 The platform is a three-tier application inside one Python package. A
 dumb-but-safe CLI captures input and renders tables; a service layer owns
